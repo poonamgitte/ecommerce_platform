@@ -1,9 +1,14 @@
-fastapi
+fastapi[standard]
 uvicorn
+
 sqlalchemy
-psycopg2-binary
+asyncpg
 alembic
+
 python-jose
 passlib[bcrypt]
 python-dotenv
 pydantic
+
+redis
+aio-pika

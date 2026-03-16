@@ -1,0 +1,35 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment variables
+.env
+
+# Alembic cache
+*.egg-info/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+```
+
+---
+
+**If your project has multiple microservices**, also add a `.gitignore` at the top level:
+```
+ecommerce_platform/
+│
+├── .gitignore          ← top level (covers all services)
+├── auth-service/
+│   ├── .gitignore      ← service level (optional, more specific)
+│   └── ...
+├── product-service/
+└── order-service/
