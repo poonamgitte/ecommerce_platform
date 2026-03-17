@@ -9,21 +9,27 @@ Handles:
 """
 
 from datetime import datetime, timedelta, timezone
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+from fastapi import Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 
 from app.core.config import settings
+from app.core.database import get_db
+
+# Add import at top
+from app.core.redis import is_token_blacklisted
 
 
-# --------------------------------------------------
-# Password Hashing Configuration
-# --------------------------------------------------
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Request
 
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto"
-)
 
+http_bearer = HTTPBearer()
+
+async def oauth2_scheme(credentials: HTTPAuthorizationCredentials = Depends(http_bearer)):
+    return credentials.credentials
 
 # --------------------------------------------------
 # Hash Password
@@ -35,7 +41,10 @@ def hash_password(password: str) -> str:
 
     We never store plain passwords in the database.
     """
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt()
+    ).decode("utf-8")
 
 
 # --------------------------------------------------
@@ -46,7 +55,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Compare user password with stored hashed password.
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8")
+    )
 
 
 # --------------------------------------------------
@@ -84,16 +96,64 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
     return encoded_jwt
 
+# --------------------------------------------------
+# Create Refresh Token
+# --------------------------------------------------
+
+def create_refresh_token(data: dict):
+    """
+    Generate long lived refresh token (7 days).
+    """
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(days=7)
+    to_encode.update({
+        "exp": expire,
+        "type": "refresh"  # distinguish from access token
+    })
+    return jwt.encode(
+        to_encode,
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM
+    )
+
+
+# --------------------------------------------------
+# Verify Refresh Token
+# --------------------------------------------------
+
+def verify_refresh_token(token: str):
+    """
+    Decode and verify refresh token.
+    Returns payload if valid, None if invalid.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        # Make sure it's a refresh token not access token
+        if payload.get("type") != "refresh":
+            return None
+        return payload
+    except JWTError:
+        return None
+
 
 # --------------------------------------------------
 # Decode JWT Token
 # --------------------------------------------------
-
-def decode_access_token(token: str):
+    
+async def decode_access_token(token: str):
     """
-    Decode JWT token and return payload.
+    Decode JWT token and check blacklist.
+    Now async because it checks Redis.
     """
     try:
+        # Check blacklist first
+        if await is_token_blacklisted(token):
+            return None
+
         payload = jwt.decode(
             token,
             settings.SECRET_KEY,
@@ -102,3 +162,40 @@ def decode_access_token(token: str):
         return payload
     except JWTError:
         return None
+    
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    # Now awaited because it checks Redis
+    payload = await decode_access_token(token)
+
+    if payload is None:
+        raise credentials_exception
+
+    user_id: str = payload.get("sub")
+
+    if user_id is None:
+        raise credentials_exception
+
+    from app.repository import user_repository
+
+    user = await user_repository.get_user_by_id(db, user_id)
+
+    if user is None:
+        raise credentials_exception
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive"
+        )
+
+    return user

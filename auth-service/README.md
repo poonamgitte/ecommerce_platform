@@ -1,23 +1,28 @@
-# Ecommerce Platform (Microservice Architecture)
+# This is the auth-service 
 
-This project is a production-style ecommerce backend built using a microservice architecture.
+# open the folder
+cd ecommerce_platform/auth-service
 
-Tech Stack:
-- FastAPI
-- PostgreSQL
-- SQLAlchemy
-- Alembic
-- Redis
-- RabbitMQ
-- Docker
-- Nginx
-- JWT Authentication
+# Step 1 — Create fresh venv
+python3 -m venv venv
+source venv/bin/activate
 
-Services:
-- Auth Service (User Authentication)
-- Product Service (Product Catalog)
-- Order Service (Order Management)
-- Cart Service (Shopping Cart)
+# Step 2 — Install dependencies
+pip install -r requirements.txt
 
-Currently implementing:
-Auth Service
+# Step 3 — Create .env file (not cloned, in .gitignore)
+
+# Step 4 — Start PostgreSQL (via Docker)
+docker start ecommerce-postgres
+# or if not created yet
+docker run --name ecommerce-postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=auth_db \
+  -p 5432:5432 -d postgres:16
+
+# Step 5 — Run migrations
+alembic upgrade head
+
+# Step 6 — Start server
+uvicorn app.main:app --reload

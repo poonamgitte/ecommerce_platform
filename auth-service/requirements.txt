@@ -4,11 +4,13 @@ uvicorn
 sqlalchemy
 asyncpg
 alembic
+psycopg2-binary
 
 python-jose
-passlib[bcrypt]
+bcrypt
 python-dotenv
 pydantic
+pydantic-settings
 
 redis
 aio-pika
